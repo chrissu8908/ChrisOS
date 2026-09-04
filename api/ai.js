@@ -1,26 +1,26 @@
 const MODELS = [
   "qwen/qwen3.6-27b",
-  "deepseek-r1-distill-qwen-32b",
 ];
 
 async function requestGroq(model, { systemPrompt = "", userPrompt = "", maxTokens = 500, jsonMode = false }) {
   const key = process.env.GROQ_API_KEY;
   if (!key) throw new Error("GROQ_API_KEY is not configured on the server");
 
-  const isDeepseek = model.includes("deepseek");
-
-  const messages = isDeepseek
-    ? [{ role: "user", content: `${systemPrompt}\n\n${userPrompt}`.trim() }]
-    : [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ];
+  const messages = [
+    { role: "system", content: systemPrompt },
+    {
+      role: "user",
+      content: jsonMode
+        ? `${userPrompt}\n\nReturn the result as valid JSON.`
+        : userPrompt,
+    },
+  ];
 
   const body = {
     model,
     messages,
     max_tokens: Math.min(Number(maxTokens) || 500, 2000),
-    temperature: isDeepseek ? 0.6 : 0.2,
+    temperature: 0.2,
   };
 
   if (jsonMode) body.response_format = { type: "json_object" };
