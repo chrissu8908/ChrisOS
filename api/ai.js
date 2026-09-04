@@ -3,9 +3,9 @@
 // Order matters: first model is tried first, rest are fallbacks if rate-limited.
 // Check current slugs at console.groq.com/docs/models
 const MODELS = [
-  "llama-3.3-70b-versatile",      // primary — best quality, generous free limits
-  "moonshotai/kimi-k2-instruct",  // fallback #1 — strong at structured output
-  "qwen/qwen3-32b",               // fallback #2 — Qwen 32B (correct Groq slug)
+  "openai/gpt-oss-120b",   // primary — largest, best at structured JSON output
+  "qwen/qwen3.6-27b",      // fallback #1 — if gpt-oss hits rate limits
+  "groq/compound",         // fallback #2 — Groq's own routing model
 ];
 
 // How long to wait for a single model before giving up and trying the next one
