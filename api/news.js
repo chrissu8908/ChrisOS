@@ -51,6 +51,10 @@ async function fetchCurrents(category) {
 }
 
 async function fetchReddit(subreddit) {
+  // 5s timeout per subreddit — Reddit can be slow; don't let one sub stall the response
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+
   try {
     const response = await fetch(
       `https://www.reddit.com/r/${encodeURIComponent(subreddit)}/hot.json?limit=8&raw_json=1`,
@@ -59,6 +63,7 @@ async function fetchReddit(subreddit) {
           "User-Agent": "ChrisOS/1.0 (personal dashboard)",
           Accept: "application/json",
         },
+        signal: controller.signal,
       }
     );
     if (!response.ok) throw new Error(`Reddit HTTP ${response.status}`);
@@ -80,6 +85,8 @@ async function fetchReddit(subreddit) {
       }));
   } catch (error) {
     return { error: `${subreddit}: ${error?.message || "Reddit request failed"}`, items: [] };
+  } finally {
+    clearTimeout(timer);
   }
 }
 

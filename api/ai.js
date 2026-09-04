@@ -1,19 +1,29 @@
+// ─── MODEL FALLBACK LIST ───────────────────────────────────────────────────────
+// Groq uses its own model slugs — NOT OpenRouter-style "provider/model" paths.
+// Order matters: first model is tried first, rest are fallbacks if rate-limited.
+// Check current slugs at console.groq.com/docs/models
 const MODELS = [
-  "qwen/qwen3.6-27b",
+  "llama-3.3-70b-versatile",      // primary — best quality, generous free limits
+  "moonshotai/kimi-k2-instruct",  // fallback #1 — strong at structured output
+  "qwen/qwen3-32b",               // fallback #2 — Qwen 32B (correct Groq slug)
 ];
+
+// How long to wait for a single model before giving up and trying the next one
+const MODEL_TIMEOUT_MS = 8000;
 
 async function requestGroq(model, { systemPrompt = "", userPrompt = "", maxTokens = 500, jsonMode = false }) {
   const key = process.env.GROQ_API_KEY;
   if (!key) throw new Error("GROQ_API_KEY is not configured on the server");
 
+  // When jsonMode is on, Groq REQUIRES the word "JSON" in the system message.
+  // We append a compact instruction rather than replacing the system prompt.
+  const finalSystem = jsonMode && !systemPrompt.toLowerCase().includes("json")
+    ? `${systemPrompt}\n\nYou must respond with a single valid JSON object. No markdown, no prose, no code fences.`
+    : systemPrompt;
+
   const messages = [
-    { role: "system", content: systemPrompt },
-    {
-      role: "user",
-      content: jsonMode
-        ? `${userPrompt}\n\nReturn the result as valid JSON.`
-        : userPrompt,
-    },
+    { role: "system", content: finalSystem },
+    { role: "user", content: userPrompt },
   ];
 
   const body = {
@@ -23,23 +33,34 @@ async function requestGroq(model, { systemPrompt = "", userPrompt = "", maxToken
     temperature: 0.2,
   };
 
+  // response_format forces Groq to validate the output is valid JSON before returning.
+  // Without this, the model can produce prose that starts with { and still fail.
   if (jsonMode) body.response_format = { type: "json_object" };
 
-  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify(body),
-  });
+  // Per-model timeout — if one model hangs, fall through to the next
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), MODEL_TIMEOUT_MS);
 
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(data?.error?.message || `Groq HTTP ${response.status}`);
+  try {
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data?.error?.message || `Groq HTTP ${response.status}`);
+    }
+
+    return data?.choices?.[0]?.message?.content || null;
+  } finally {
+    clearTimeout(timer);
   }
-
-  return data?.choices?.[0]?.message?.content || null;
 }
 
 module.exports = async function handler(req, res) {
